@@ -2,8 +2,8 @@
 
 # Configuration
 CONFIG_FILE="/usr/local/etc/haproxy/haproxy.cfg"
-USER="Arsen"
-PASS="@Ar_s"
+USER="Arsen1k"
+PASS="Speed123"
 TEMP_MSG_FILE="/tmp/tg_msg_id.txt"
 
 echo "🚀 Launching Arsen1k Hard-Rotation Engine (DB Mode)..."
@@ -54,17 +54,15 @@ update_system() {
     FLAG=$(get_flag "$COUNTRY_CODE")
 
     # Prepare Telegram Message
-    MSG="🚀 <b>High-Speed Proxy Online</b>
-
+    MSG="<blockquote>🚀 <b>High-Speed Proxy Online</b></blockquote>
 🌍 <b>Country:</b> $FLAG $COUNTRY_CODE
 🌐 <b>IP:</b> <code>$FINAL_IP</code>
 🔌 <b>Port:</b> <code>$RAILWAY_TCP_PROXY_PORT</code>
 👤 <b>User:</b> <code>$USER</code>
 🔑 <b>Pass:</b> <code>$PASS</code>
 🔢 <b>Active Proxies:</b> $COUNT
-
-<b>========== HTTP Custom ==========</b>
-<code>Ars1k:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
+<blockquote><b>========== HTTP Custom ==========</b></blockquote>
+<code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
 
     if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$OWNER_ID" ]; then
         if [ "$is_update" = "true" ] && [ -f "$TEMP_MSG_FILE" ]; then
