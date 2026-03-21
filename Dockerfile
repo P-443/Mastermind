@@ -5,7 +5,7 @@ USER root
 RUN apk add --no-cache bash grep curl bind-tools postgresql-client
 
 COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
-COPY entrypoint.sh /entrypoint.sh
+COPY run.sh /run.sh
 
 RUN chmod +x /entrypoint.sh
 
