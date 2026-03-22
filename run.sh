@@ -1,108 +1,63 @@
 #!/bin/bash
 
-# --- 1. Configuration ---
+# Configuration
 CONFIG_FILE="/usr/local/etc/haproxy/haproxy.cfg"
-USER_TEMP_MSG="/tmp/user_msg_id.txt"
-OWNER_TEMP_MSG="/tmp/owner_msg_id.txt"
-PHOTO_URL="https://t.me/l_s_1_1/159"
-LAST_UPDATE_ID=0
+USER="Arsen1k"
+PASS="Speed123"
+TEMP_MSG_FILE="/tmp/tg_msg_id.txt"
 
-# Default Credentials
-[ -z "$USER" ] && USER="Arsen1k"
-[ -z "$PASS" ] && PASS="Speed123"
+echo "🚀 Launching Arsen1k Hard-Rotation Engine (DB Mode)..."
 
-echo "🚀 Arsen1k Ultimate Engine V5 (Full Real-Data Mode) Active..."
+# 1. Check for Database URL
+if [ -z "$DATABASE_URL" ]; then
+    echo "❌ ERROR: DATABASE_URL is not set!"
+    exit 1
+fi
 
-# --- 2. Function: جلب البيانات الفعلية من ريلوي (Account & Billing) ---
-get_railway_billing() {
-    # استعلام لجلب الرصيد المتبقي والاستهلاك الفعلي من الحساب
-    QUERY='query {
-      me {
-        consumption { estimatedCost }
-        credits { remainingCredits }
-      }
-    }'
-    
-    RESPONSE=$(curl -s -X POST https://backboard.railway.app/graphql \
-        -H "Authorization: Bearer $RAILWAY_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d "{\"query\": \"$QUERY\"}")
-
-    # استخراج القيم الحقيقية من الـ API
-    COST=$(echo "$RESPONSE" | jq -r '.data.me.consumption.estimatedCost // 0')
-    REMAINING_CREDIT=$(echo "$RESPONSE" | jq -r '.data.me.credits.remainingCredits // 0')
-
-    # حساب الجيجات (ريلوي تحاسب 0.05$ لكل 1 جيجا Egress)
-    USED_GB=$(echo "scale=2; $COST / 0.05" | bc -l | sed 's/^\./0./')
-    REMAINING_GB=$(echo "scale=2; $REMAINING_CREDIT / 0.05" | bc -l | sed 's/^\./0./')
-    
-    # تنسيق الأرقام للعرض
-    REMAINING_CREDIT=$(printf "%.2f" $REMAINING_CREDIT)
+# Function to get Country Flag Emoji
+get_flag() {
+    local code=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    if [ -z "$code" ]; then echo "🏳️"; return; fi
+    # Convert ISO code to Regional Indicator Symbols
+    printf "\\U$(printf '%x' $((0x1F1E6 + $(printf '%d' "'${code:0:1}") - 65)))\\U$(printf '%x' $((0x1F1E6 + $(printf '%d' "'${code:1:1}") - 65)))"
 }
 
-# --- 3. Function: مراقبة تغيير اليوزر والباسورد من التليجرام ---
-check_user_updates() {
-    UPD_RESP=$(curl -s "https://api.telegram.org/bot$TELEGRAM_TOKEN/getUpdates?offset=-1&limit=1")
-    UPD_ID=$(echo "$UPD_RESP" | jq -r '.result[0].update_id // 0')
-
-    if [ "$UPD_ID" -ne "$LAST_UPDATE_ID" ] && [ "$UPD_ID" -ne "0" ]; then
-        LAST_UPDATE_ID=$UPD_ID
-        MSG_TEXT=$(echo "$UPD_RESP" | jq -r '.result[0].message.text // ""')
-        SENDER_ID=$(echo "$UPD_RESP" | jq -r '.result[0].message.from.id // 0')
-
-        # إذا أرسل اليوزر نصاً يحتوي على ":" (User:Pass)
-        if [ "$SENDER_ID" == "$USER_ID" ] && [[ "$MSG_TEXT" == *":"* ]]; then
-            USER=$(echo "$MSG_TEXT" | cut -d':' -f1)
-            PASS=$(echo "$MSG_TEXT" | cut -d':' -f2)
-            
-            echo "✅ Credentials changed to: $USER:$PASS"
-            curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
-                -d "chat_id=$USER_ID" -d "text=✅ Credentials updated to: <code>$USER:$PASS</code>" -d "parse_mode=HTML"
-            
-            update_system "true"
-        fi
-    fi
-}
-
-# --- 4. Function: إرسال الإشعارات المستحدثة ---
-send_notifications() {
+# Function to Update HAProxy and TG Message
+update_system() {
     local is_update=$1
-    get_railway_billing
+    echo "📥 Fetching proxies from Database..."
+    PROXIES=$(psql "$DATABASE_URL" -t -c "SELECT proxy_data FROM proxy_pool;" | xargs)
     
-    # جلب اسم المستخدم الحقيقي
-    TG_NAME=$(curl -s "https://api.telegram.org/bot$TELEGRAM_TOKEN/getChat?chat_id=$USER_ID" | jq -r '.result.first_name // "User"')
-
-    # رسالة اليوزر (صورة + بيانات حقيقية + زر ملون)
-    if [ -n "$USER_ID" ]; then
-        USER_MSG="<blockquote>Welcome, <b>$TG_NAME</b>! 🚀</blockquote>
-👤 <b>User:</b> <code>$USER</code>
-💰 <b>Credit:</b> <code>$REMAINING_CREDIT $</code>
-📉 <b>Used Traffic:</b> <code>$USED_GB GB</code>
-🚀 <b>Remaining Traffic:</b> <code>$REMAINING_GB GB</code>
-
-<blockquote><b>Proxy Info:</b>
-<code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code></blockquote>"
-
-        KEYBOARD='{"inline_keyboard":[[{"text":"🌀 Change Credentials","switch_inline_query_current_chat":""}]]}'
-
-        if [ "$is_update" = "false" ]; then
-            RESP=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendPhoto" \
-                -d "chat_id=$USER_ID" -d "photo=$PHOTO_URL" -d "caption=$USER_MSG" \
-                -d "parse_mode=HTML" -d "reply_markup=$KEYBOARD")
-            echo "$RESP" | jq -r '.result.message_id' > $USER_TEMP_MSG
-        else
-            MSG_ID=$(cat $USER_TEMP_MSG 2>/dev/null)
-            [ -n "$MSG_ID" ] && curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/editMessageCaption" \
-                -d "chat_id=$USER_ID" -d "message_id=$MSG_ID" \
-                -d "caption=$USER_MSG" -d "parse_mode=HTML" -d "reply_markup=$KEYBOARD"
+    # Clean old servers
+    sed -i '/    server /d' $CONFIG_FILE
+    
+    COUNT=0
+    for VAL in $PROXIES; do
+        IP_PORT=$(echo $VAL | cut -d'@' -f2)
+        if [ -n "$IP_PORT" ]; then
+            ((COUNT++))
+            echo "    server srv_$COUNT $IP_PORT check maxconn 1" >> $CONFIG_FILE
         fi
-    fi
+    done
 
-    # رسالة الأدمن (التنسيق الكامل)
-    if [ -n "$OWNER_ID" ]; then
-        COUNT=$(psql "$DATABASE_URL" -t -c "SELECT COUNT(*) FROM proxy_pool;" | xargs 2>/dev/null)
-        OWNER_MSG="<blockquote>🚀 <b>High-Speed Proxy Online</b></blockquote>
-🌍 <b>Country:</b> EG
+    # Reload HAProxy logic
+    if [ "$is_update" = "true" ] && [ -f "/tmp/haproxy.pid" ]; then
+        echo "🔄 Reloading HAProxy with new configuration..."
+        haproxy -f $CONFIG_FILE -p /tmp/haproxy.pid -sf $(cat /tmp/haproxy.pid) &
+    else
+        echo "🚀 Starting HAProxy for the first time..."
+        haproxy -f $CONFIG_FILE -p /tmp/haproxy.pid &
+    fi
+    
+    # Network Info
+    FINAL_IP=$(getent hosts $RAILWAY_TCP_PROXY_DOMAIN | awk '{ print $1 }' | head -n 1)
+    [ -z "$FINAL_IP" ] && FINAL_IP="0.0.0.0"
+    COUNTRY_CODE=$(curl -s https://ipinfo.io/country)
+    FLAG=$(get_flag "$COUNTRY_CODE")
+
+    # Prepare Telegram Message
+    MSG="<blockquote>🚀 <b>High-Speed Proxy Online</b></blockquote>
+🌍 <b>Country:</b> $FLAG $COUNTRY_CODE
 🌐 <b>IP:</b> <code>$FINAL_IP</code>
 🔌 <b>Port:</b> <code>$RAILWAY_TCP_PROXY_PORT</code>
 👤 <b>User:</b> <code>$USER</code>
@@ -111,52 +66,45 @@ send_notifications() {
 <blockquote><b>========== HTTP Custom ==========</b></blockquote>
 <code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
 
-        if [ "$is_update" = "false" ]; then
-            RESP=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
-                -d "chat_id=$OWNER_ID" -d "text=$OWNER_MSG" -d "parse_mode=HTML")
-            echo "$RESP" | jq -r '.result.message_id' > $OWNER_TEMP_MSG
+    if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$OWNER_ID" ]; then
+        if [ "$is_update" = "true" ] && [ -f "$TEMP_MSG_FILE" ]; then
+            # Edit existing message
+            MSG_ID=$(cat $TEMP_MSG_FILE)
+            curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/editMessageText" \
+                -d "chat_id=$OWNER_ID" \
+                -d "message_id=$MSG_ID" \
+                -d "text=$MSG" \
+                -d "parse_mode=HTML" > /dev/null
+            echo "🔄 Telegram message updated. Active: $COUNT"
         else
-            MSG_ID=$(cat $OWNER_TEMP_MSG 2>/dev/null)
-            [ -n "$MSG_ID" ] && curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/editMessageText" \
-                -d "chat_id=$OWNER_ID" -d "message_id=$MSG_ID" \
-                -d "text=$OWNER_MSG" -d "parse_mode=HTML"
+            # Send new message and save ID
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+                -d "chat_id=$OWNER_ID" \
+                -d "text=$MSG" \
+                -d "parse_mode=HTML")
+            echo "$RESP" | jq -r '.result.message_id' > $TEMP_MSG_FILE
+            echo "📤 Initial Telegram message sent."
         fi
     fi
+    LAST_KNOWN_COUNT=$COUNT
 }
 
-# --- 5. Core Logic ---
-update_system() {
-    local is_update=$1
-    echo "📥 Syncing System..."
-    
-    FINAL_IP=$(getent hosts $RAILWAY_TCP_PROXY_DOMAIN | awk '{ print $1 }' | head -n 1)
-    [ -z "$FINAL_IP" ] && FINAL_IP="0.0.0.0"
-
-    # تحديث ملف الـ HAProxy وتغيير الـ Auth (بناءً على طلبك السابق)
-    # (هنا يتم تطبيق كود HAProxy reload)
-
-    send_notifications "$is_update"
-}
-
-# تشغيل أولي
+# Initial execution
 update_system "false"
 
-# --- 6. Loop للمراقبة (كل 5 ثواني للاستجابة السريعة) ---
-while true; do
-    check_user_updates
+# 2. Monitoring Loop (Every 1 minute for 3 minutes)
+echo "🛡 Starting stability monitor for 3 minutes..."
+for i in {1..3}; do
+    sleep 60
+    CURRENT_DB_COUNT=$(psql "$DATABASE_URL" -t -c "SELECT COUNT(*) FROM proxy_pool;" | xargs)
     
-    # فحص الداتا بيز كل دقيقة
-    if (( $(date +%s) % 60 == 0 )); then
-        NEW_COUNT=$(psql "$DATABASE_URL" -t -c "SELECT COUNT(*) FROM proxy_pool;" | xargs 2>/dev/null)
-        if [ "$NEW_COUNT" != "$COUNT" ]; then
-            COUNT=$NEW_COUNT
-            update_system "true"
-        fi
+    if [ "$CURRENT_DB_COUNT" -ne "$LAST_KNOWN_COUNT" ]; then
+        echo "🔔 Change detected! (New: $CURRENT_DB_COUNT, Old: $LAST_KNOWN_COUNT)"
+        update_system "true"
+    else
+        echo "⏳ No changes detected in minute $i."
     fi
-    
-    # طباعة نبض النظام في الترمنال
-    echo "--- Heartbeat ---"
-    echo "User: $USER | Credits: $REMAINING_CREDIT$ | DB: $COUNT"
-    
-    sleep 5
 done
+
+echo "✅ Monitoring period finished. System is stable."
+wait
