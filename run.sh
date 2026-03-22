@@ -40,13 +40,15 @@ update_system() {
         fi
     done
 
-    # Reload HAProxy
-    if [ "$is_update" = "true" ]; then
+    # Reload HAProxy logic
+    if [ "$is_update" = "true" ] && [ -f "/tmp/haproxy.pid" ]; then
+        echo "🔄 Reloading HAProxy with new configuration..."
         haproxy -f $CONFIG_FILE -p /tmp/haproxy.pid -sf $(cat /tmp/haproxy.pid) &
     else
+        echo "🚀 Starting HAProxy for the first time..."
         haproxy -f $CONFIG_FILE -p /tmp/haproxy.pid &
     fi
-
+    
     # Network Info
     FINAL_IP=$(getent hosts $RAILWAY_TCP_PROXY_DOMAIN | awk '{ print $1 }' | head -n 1)
     [ -z "$FINAL_IP" ] && FINAL_IP="0.0.0.0"
