@@ -32,11 +32,13 @@ update_system() {
     sed -i '/    server /d' $CONFIG_FILE
     
     COUNT=0
+    PROXY_LIST=""
     for VAL in $PROXIES; do
         IP_PORT=$(echo $VAL | cut -d'@' -f2)
         if [ -n "$IP_PORT" ]; then
             ((COUNT++))
             echo "    server srv_$COUNT $IP_PORT check maxconn 1" >> $CONFIG_FILE
+            PROXY_LIST+="$VAL"$'\n'
         fi
     done
 
@@ -63,6 +65,8 @@ update_system() {
 👤 <b>User:</b> <code>$USER</code>
 🔑 <b>Pass:</b> <code>$PASS</code>
 🔢 <b>Active Proxies:</b> $COUNT
+<expandable-blockquote><b>proxy list:</b>
+${PROXY_LIST}</expandable-blockquote>
 <blockquote><b>========== HTTP Custom ==========</b></blockquote>
 <code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
 
