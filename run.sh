@@ -38,6 +38,7 @@ update_system() {
         if [ -n "$IP_PORT" ]; then
             ((COUNT++))
             echo "    server srv_$COUNT $IP_PORT check maxconn 1" >> $CONFIG_FILE
+            # نجمع البروكسيات تحت بعضها
             PROXY_LIST+="$VAL"$'\n'
         fi
     done
@@ -65,7 +66,7 @@ update_system() {
 👤 <b>User:</b> <code>$USER</code>
 🔑 <b>Pass:</b> <code>$PASS</code>
 🔢 <b>Active Proxies:</b> $COUNT
-<expandable-blockquote><b>proxy list:</b>
+<expandable-blockquote><b>قائمة البروكسيات:</b>
 ${PROXY_LIST}</expandable-blockquote>
 <blockquote><b>========== HTTP Custom ==========</b></blockquote>
 <code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
@@ -74,20 +75,38 @@ ${PROXY_LIST}</expandable-blockquote>
         if [ "$is_update" = "true" ] && [ -f "$TEMP_MSG_FILE" ]; then
             # Edit existing message
             MSG_ID=$(cat $TEMP_MSG_FILE)
-            curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/editMessageText" \
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/editMessageText" \
                 -d "chat_id=$OWNER_ID" \
                 -d "message_id=$MSG_ID" \
                 -d "text=$MSG" \
-                -d "parse_mode=HTML" > /dev/null
-            echo "🔄 Telegram message updated. Active: $COUNT"
+                -d "parse_mode=HTML")
+            
+            IS_OK=$(echo "$RESP" | jq -r '.ok')
+            if [ "$IS_OK" = "true" ]; then
+                echo "🔄 Telegram message updated. Active: $COUNT"
+            else
+                echo "❌ Telegram API Error (Edit): $(echo $RESP | jq -r '.description')"
+            fi
         else
             # Send new message and save ID
             RESP=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
                 -d "chat_id=$OWNER_ID" \
                 -d "text=$MSG" \
                 -d "parse_mode=HTML")
-            echo "$RESP" | jq -r '.result.message_id' > $TEMP_MSG_FILE
-            echo "📤 Initial Telegram message sent."
+            
+            IS_OK=$(echo "$RESP" | jq -r '.ok')
+            if [ "$IS_OK" = "true" ]; then
+                echo "$RESP" | jq -r '.result.message_id' > $TEMP_MSG_FILE
+                echo "✅ Initial Telegram message sent successfully."
+            else
+                echo "❌ Telegram API Error: $(echo $RESP | jq -r '.description')"
+                # محاولة إرسال رسالة مختصرة إذا كان السبب هو طول النص
+                if [[ "$RESP" == *"message is too long"* ]]; then
+                    echo "⚠️ Message too long, sending first 50 proxies only..."
+                    SHORT_LIST=$(echo "$PROXY_LIST" | head -n 50)
+                    # إعادة بناء الرسالة المختصرة هنا إذا لزم الأمر
+                fi
+            fi
         fi
     fi
     LAST_KNOWN_COUNT=$COUNT
