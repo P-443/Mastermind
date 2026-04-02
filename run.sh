@@ -38,7 +38,7 @@ update_system() {
         if [ -n "$IP_PORT" ]; then
             ((COUNT++))
             echo "    server srv_$COUNT $IP_PORT check maxconn 1" >> $CONFIG_FILE
-            # نجمع البروكسيات تحت بعضها
+            # جمع البروكسيات
             PROXY_LIST+="$VAL"$'\n'
         fi
     done
@@ -58,7 +58,7 @@ update_system() {
     COUNTRY_CODE=$(curl -s https://ipinfo.io/country)
     FLAG=$(get_flag "$COUNTRY_CODE")
 
-    # Prepare Telegram Message
+    # Prepare Telegram Message (Using Standard blockquote for compatibility)
     MSG="<blockquote>🚀 <b>High-Speed Proxy Online</b></blockquote>
 🌍 <b>Country:</b> $FLAG $COUNTRY_CODE
 🌐 <b>IP:</b> <code>$FINAL_IP</code>
@@ -66,8 +66,10 @@ update_system() {
 👤 <b>User:</b> <code>$USER</code>
 🔑 <b>Pass:</b> <code>$PASS</code>
 🔢 <b>Active Proxies:</b> $COUNT
-<expandable-blockquote><b>قائمة البروكسيات:</b>
-${PROXY_LIST}</expandable-blockquote>
+
+<b>📋 Proxy List:</b>
+<pre>${PROXY_LIST}</pre>
+
 <blockquote><b>========== HTTP Custom ==========</b></blockquote>
 <code>$USER:$PASS@$FINAL_IP:$RAILWAY_TCP_PROXY_PORT</code>"
 
@@ -99,12 +101,16 @@ ${PROXY_LIST}</expandable-blockquote>
                 echo "$RESP" | jq -r '.result.message_id' > $TEMP_MSG_FILE
                 echo "✅ Initial Telegram message sent successfully."
             else
-                echo "❌ Telegram API Error: $(echo $RESP | jq -r '.description')"
-                # محاولة إرسال رسالة مختصرة إذا كان السبب هو طول النص
-                if [[ "$RESP" == *"message is too long"* ]]; then
-                    echo "⚠️ Message too long, sending first 50 proxies only..."
-                    SHORT_LIST=$(echo "$PROXY_LIST" | head -n 50)
-                    # إعادة بناء الرسالة المختصرة هنا إذا لزم الأمر
+                # إذا فشل بسبب الطول، سنرسل نسخة مختصرة جداً
+                ERROR_DESC=$(echo "$RESP" | jq -r '.description')
+                echo "❌ Telegram API Error: $ERROR_DESC"
+                
+                if [[ "$ERROR_DESC" == *"message is too long"* ]]; then
+                   echo "⚠️ Attempting to send without proxy list due to length..."
+                   SHORT_MSG="🚀 Proxy Online ($COUNT Active) - List too long to display."
+                   curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+                        -d "chat_id=$OWNER_ID" \
+                        -d "text=$SHORT_MSG"
                 fi
             fi
         fi
@@ -115,7 +121,7 @@ ${PROXY_LIST}</expandable-blockquote>
 # Initial execution
 update_system "false"
 
-# 2. Monitoring Loop (Every 1 minute for 3 minutes)
+# 2. Monitoring Loop
 echo "🛡 Starting stability monitor for 3 minutes..."
 for i in {1..3}; do
     sleep 60
